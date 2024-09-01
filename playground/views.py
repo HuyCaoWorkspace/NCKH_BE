@@ -69,7 +69,7 @@ from PIL import Image
 #         # })
 
 
-def save_img_from_FB(image_url):
+def save_file_from_FB(image_url):
 
         try:
             # Download image
@@ -121,7 +121,7 @@ class AcneDetectionView(APIView):
         if not image_url:
             return Response({'error': 'No image url provided.'}, status=status.HTTP_400_BAD_REQUEST)
         
-        image_path = save_img_from_FB(image_url)
+        image_path = save_file_from_FB(image_url)
         
         if os.path.isfile(image_path):
             try:   
@@ -129,7 +129,7 @@ class AcneDetectionView(APIView):
             except IOError:
                 return Response({'error': 'Invalid file format! File is not an image!'}, status=status.HTTP_400_BAD_REQUEST)
         else:    
-            return Response({'error': 'No file found at the provided path!*'}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({'error': 'No file found at the provided path!'}, status=status.HTTP_400_BAD_REQUEST)
             
         
         yolo_model = YOLO('model/yolo_63Acc.pt')
