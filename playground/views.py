@@ -1,3 +1,8 @@
+from django.core.cache import cache
+
+# Clear all cache keys
+cache.clear()
+
 from django.shortcuts import render
 
 from django.conf import settings
@@ -7,7 +12,8 @@ from rest_framework.views import APIView
 from rest_framework import status
 from rest_framework.response import Response
 
-import os
+import shutil
+
 import requests
 from urllib.parse import urlparse
 from pathlib import Path
@@ -31,6 +37,10 @@ firebase = pyrebase.initialize_app(
     }
 )
 storage = firebase.storage()
+
+api_key = os.getenv("FIREBASE_API_KEY")
+print("API_KEY:", api_key)
+
 
 from ultralytics import YOLO
 from torchvision import torch, models, transforms
@@ -106,10 +116,27 @@ def upload_to_firebase(file_path):
     
     #NOTE - Firebase detected images container
 
-    storage.child(f"result/{image_name}").put(file_path)
-    image_url = storage.child(f"result/{image_name}").get_url(None)
+    storage.child(f"result/detected_img/{image_name}").put(file_path)
+    image_url = storage.child(f"result/detected_img/{image_name}").get_url(None)
     
     return image_url
+
+import os
+
+def count_crops_in_acne_classes(base_directory):
+    result = {}
+    for root, dirs, files in os.walk(base_directory):
+        # os.walk(base_directory) duyệt qua cây thư mục từ base và trả về 3 tuples:
+        #    root là thư mục hiện tại
+        #    dirs là danh sách các thư mục con của thư mục hiện tại
+        #    files là danh sách các tập tin trong thư mục hiện tại
+
+        # nếu root hiện tại không có dirs (không có con => thư mục acne classes)
+        if not dirs:
+            folder_name = os.path.basename(root)  # Lấy tên thư mục
+            file_count = len(files)  # Đếm số lượng file trong thư mục đó
+            result[folder_name] = file_count  # Lưu kết quả vào dictionary
+    return result
 
 
 class AcneDetectionView(APIView):
@@ -134,7 +161,7 @@ class AcneDetectionView(APIView):
         
         yolo_model = YOLO('model/yolo_63Acc.pt')
 
-        yolo_results = yolo_model(image_path, save=True, save_conf=True, save_txt=True, save_crop=True, project='run/detect', name='yolo_predict', exist_ok=True)
+        yolo_results = yolo_model(image_path, save=True, save_conf=True, save_txt=True, save_crop=True, show_labels=False, show_conf=False, project='run/detect', name='yolo_predict', exist_ok=True)
         
         resnet_model = models.resnet50(pretrained=True)
         resnet_model.fc = nn.Linear(resnet_model.fc.in_features, 5)  # Adjust to match the original model's output units
@@ -189,4 +216,10 @@ class AcneDetectionView(APIView):
         detection_url = upload_to_firebase(detected_img)
         print(detection_url)
 
-        return Response({"status" : "status.HTTP_200_OK", "data" : detection_url})
+        number_of_crops = count_crops_in_acne_classes("run/classify/")
+        print(number_of_crops)
+
+        # remove data from local
+        # shutil.rmtree('run')
+
+        return Response({"status" : "status.HTTP_200_OK", "data" : {"detected_image_url": detection_url, "number_of_acnes": number_of_crops}})
