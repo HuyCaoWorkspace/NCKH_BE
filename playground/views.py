@@ -282,10 +282,13 @@ def draw_bounding_boxes(image_path, label_path, output_path):
 
 class AcneDetectionView(APIView):
 
-    os.makedirs(os.path.join(settings.MEDIA_ROOT,"result_img"), exist_ok=True)
-
     def post(self, request, *args, **kwargs):
         
+        # img_to_detect = os.path.join(settings.MEDIA_ROOT, "img_to_detect")
+
+        os.makedirs(os.path.join(settings.MEDIA_ROOT,"img_to_detect"), exist_ok=True)
+        os.makedirs(os.path.join(settings.MEDIA_ROOT,"result_img"), exist_ok=True)
+
         image_url = request.data.get('image_url')
 
         if not image_url:
@@ -312,7 +315,19 @@ class AcneDetectionView(APIView):
         resnet_model.eval()    
 
         crops_path = "run\\detect\\yolo_predict\\crops\\acne"
-        crop_dir = os.listdir(crops_path)
+
+
+        # Check if there are acnes detected
+        try:
+            crop_dir = os.listdir(crops_path)
+        except Exception as e:
+            shutil.rmtree('run')
+            shutil.rmtree(os.path.join(settings.MEDIA_ROOT,"result_img"))
+            shutil.rmtree(os.path.join(settings.MEDIA_ROOT,"img_to_detect"))
+            return Response({'data': 'No acne detected.'}, status=status.HTTP_200_OK)
+
+
+        os.makedirs(os.path.join(settings.MEDIA_ROOT,"result_img"), exist_ok=True)
 
         class_names = ['0_blackhead', '1_whitehead', "2_nodule", "3_pustule", "4_papule"]
             
@@ -384,12 +399,27 @@ class AcneDetectionView(APIView):
         draw_bounding_boxes(image_path, label_path, final_path)
 
         final_url = upload_to_firebase(final_path)
+
         # remove data from local
-        shutil.rmtree('run')
+
         try:
-            os.remove(final_path)
+            shutil.rmtree('run')
+            shutil.rmtree(os.path.join(settings.MEDIA_ROOT,"img_to_detect"))
+            shutil.rmtree(os.path.join(settings.MEDIA_ROOT,"result_img"))
         except Exception as e:
             print(f"Error occurred while removing file '{final_path}': {e}")
+
+        # for filename in os.listdir(img_to_detect):
+        #     file_path = os.path.join(img_to_detect, filename)
+        #     try:
+        #         # If it's a directory, delete it and its contents
+        #         if os.path.isdir(file_path):
+        #             shutil.rmtree(file_path)
+        #         # If it's a file, delete it
+        #         else:
+        #             os.remove(file_path)
+        #     except Exception as e:
+        #         print(f'Failed to delete {file_path}. Reason: {e}')
 
 
         return Response({"status" : "status.HTTP_200_OK", "data" : {"detected_image_url": final_url, "number_of_acnes": number_of_crops}})
