@@ -390,6 +390,10 @@ class AcneDetectionView(APIView):
             os.remove(final_path)
         except Exception as e:
             print(f"Error occurred while removing file '{final_path}': {e}")
+        try:
+            os.remove(image_path)
+        except Exception as e:
+            print(f"Error occurred while removing file '{image_path}': {e}")
 
 
         return Response({"status" : "status.HTTP_200_OK", "data" : {"detected_image_url": final_url, "number_of_acnes": number_of_crops}})
