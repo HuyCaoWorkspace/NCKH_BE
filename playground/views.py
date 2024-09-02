@@ -408,6 +408,10 @@ class AcneDetectionView(APIView):
             shutil.rmtree(os.path.join(settings.MEDIA_ROOT,"result_img"))
         except Exception as e:
             print(f"Error occurred while removing file '{final_path}': {e}")
+        try:
+            os.remove(image_path)
+        except Exception as e:
+            print(f"Error occurred while removing file '{image_path}': {e}")
 
         # for filename in os.listdir(img_to_detect):
         #     file_path = os.path.join(img_to_detect, filename)
