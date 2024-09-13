@@ -279,6 +279,7 @@ def draw_bounding_boxes(image_path, label_path, output_path):
     if not os.path.isfile(output_path) or os.path.getsize(output_path) == 0:
         raise IOError(f"Image file '{output_path}' is not saved or is empty.")
 
+#SECTION API
 
 class AcneDetectionView(APIView):
 
@@ -292,7 +293,7 @@ class AcneDetectionView(APIView):
         image_url = request.data.get('image_url')
 
         if not image_url:
-            return Response({'error': 'No image url provided.'}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({'error': 'No url provided.'}, status=status.HTTP_400_BAD_REQUEST)
         
         image_path = save_file_from_FB(image_url)
         
