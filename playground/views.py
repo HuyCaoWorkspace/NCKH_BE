@@ -325,7 +325,7 @@ class AcneDetectionView(APIView):
             shutil.rmtree('run')
             shutil.rmtree(os.path.join(settings.MEDIA_ROOT,"result_img"))
             shutil.rmtree(os.path.join(settings.MEDIA_ROOT,"img_to_detect"))
-            return Response({'data': 'No acne detected.'}, status=status.HTTP_200_OK)
+            return Response({'status' : 'status.HTTP_200_OK','data': {'message': 'No acne detected.'}}, status=status.HTTP_200_OK)
 
 
         os.makedirs(os.path.join(settings.MEDIA_ROOT,"result_img"), exist_ok=True)
@@ -427,4 +427,4 @@ class AcneDetectionView(APIView):
         #         print(f'Failed to delete {file_path}. Reason: {e}')
 
 
-        return Response({"status" : "status.HTTP_200_OK", "data" : {"detected_image_url": final_url, "number_of_acnes": number_of_crops}})
+        return Response({"status" : "status.HTTP_200_OK", "data" : {"detected_image_url": final_url, "number_of_acnes": number_of_crops}},status=status.HTTP_200_OK)
