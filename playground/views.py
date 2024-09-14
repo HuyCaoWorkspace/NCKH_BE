@@ -1,8 +1,5 @@
 from django.core.cache import cache
-# Clear all cache keys
 cache.clear()
-
-from django.shortcuts import render
 
 from django.conf import settings
 import os
@@ -10,8 +7,6 @@ import os
 from rest_framework.views import APIView
 from rest_framework import status
 from rest_framework.response import Response
-
-
 
 import requests
 from urllib.parse import urlparse
@@ -21,9 +16,18 @@ from pathlib import Path
 import pyrebase
 from dotenv import load_dotenv
 
+import shutil
+
+from ultralytics import YOLO
+from torchvision import torch, models, transforms
+import torch.nn as nn
+from PIL import Image
+
+import cv2
+
 load_dotenv()  # Load environment variables from .env file
 
-#NOTE - Firebase
+#SECTION - Firebase parameters
 firebase = pyrebase.initialize_app(
     {
         "apiKey": os.getenv("FIREBASE_API_KEY"),
@@ -39,14 +43,6 @@ storage = firebase.storage()
 
 api_key = os.getenv("FIREBASE_API_KEY")
 print("API_KEY:", api_key)
-
-import shutil
-# shutil.rmtree('run')
-
-from ultralytics import YOLO
-from torchvision import torch, models, transforms
-import torch.nn as nn
-from PIL import Image
 
 #FIXME - DONT TOUCH THIS
 # class serve_image_and_label(APIView):
@@ -78,44 +74,50 @@ from PIL import Image
 #         #     "images": image_url,
 #         #     "labels": label_url
 #         # })
-
-
+ 
+#!SECTION 
+#SECTION function
+#ANCHOR - Save file from Firebase to local filesystem
 def save_file_from_FB(image_url):
 
-        try:
-            # Download image
-            response = requests.get(image_url)
-            if response.status_code != 200:
-                return Response({"error": "Failed to download image"}, status=400)
+    try:
+        # Download image
+        response = requests.get(image_url)
+        if response.status_code != 200:
+            print("Can't get image from provided URL.")
+            return "error"
 
-            # Save image temporarily
-            parsed_url = urlparse(image_url)
-            image_name = os.path.basename(parsed_url.path)
+        # Save image temporarily
+        parsed_url = urlparse(image_url)
+        image_name = os.path.basename(parsed_url.path)
 
-            #NOTE - Firebase pure image container
+        #REVIEW - Firebase pure image container (before detection)
+        # remember to change the "dir_to_remove" to suit Firebase's structure
 
-            dir_to_remove = "pure_images%2F"
-            image_name = image_name.replace(dir_to_remove,"")
+        dir_to_remove = "pure_images%2F"
+        image_name = image_name.replace(dir_to_remove,"")
 
+        # Define the local path to save the image
+        media_path = Path(settings.MEDIA_ROOT) / "img_to_detect" / image_name
 
-            # Define the local path to save the image
-            media_path = Path(settings.MEDIA_ROOT) / "img_to_detect" / image_name
+        # Write the image content to the media folder
+        with open(media_path, 'wb') as file:
+            file.write(response.content)
 
-            # Write the image content to the media folder
-            with open(media_path, 'wb') as file:
-                file.write(response.content)
+        # Return a success response with the saved image path
+        return media_path
 
-            # Return a success response with the saved image path
-            return media_path
-
-        except Exception as e:
-            return Response({"error": str(e)}, status=500)
+    except Exception as e:
+        print("Error occurred.")
+        return "error"
+    
+#ANCHOR Upload file to Firebase
 def upload_to_firebase(file_path):
 
     file_path = file_path 
     image_name = os.path.basename(file_path)
     
-    #NOTE - Firebase detected images container
+    #REVIEW - Firebase detected images container (after detection)
 
     storage.child(f"result/detected_img/{image_name}").put(file_path)
     image_url = storage.child(f"result/detected_img/{image_name}").get_url(None)
@@ -124,6 +126,7 @@ def upload_to_firebase(file_path):
 
 import os
 
+#ANCHOR - Count acnes by classes
 def count_crops_in_acne_classes(base_directory):
     result = {}
     for root, dirs, files in os.walk(base_directory):
@@ -139,7 +142,7 @@ def count_crops_in_acne_classes(base_directory):
             result[folder_name] = file_count  # Lưu kết quả vào dictionary
     return result
 
-#SECTION - Key for sort function, use to sort vectors (crop images)
+#ANCHOR - Key for sort function, use to sort vectors (crop images)
 import re
 
 def extract_last_numeric_value_key(s):
@@ -165,7 +168,7 @@ def extract_first_numeric_value(list):
 # # Sort the list using the custom key function
 # sorted_strings = sorted(strings, key=extract_last_numeric_value)
 
-
+#ANCHOR - List acnes with classes
 def list_crops_with_classes(root_dir):
     crop_list = []
     
@@ -180,7 +183,7 @@ def list_crops_with_classes(root_dir):
     
     return crop_list
 
-
+#ANCHOR - Replace initial yolo label (one class) with new label (many classes)
 def replace_crop_labels(file_path, label):
 
     with open(file_path, 'r') as file:
@@ -213,8 +216,8 @@ def copy_file(source_path, destination_path):
     except Exception as e:
         print(f"An error occurred: {e}")
 
-import cv2
 
+#ANCHOR - Draw bounding box with new labels
 def draw_bounding_boxes(image_path, label_path, output_path):
     # Check if paths are valid
     if not image_path:
@@ -278,6 +281,16 @@ def draw_bounding_boxes(image_path, label_path, output_path):
     # Optionally, verify if the file was saved and is not empty
     if not os.path.isfile(output_path) or os.path.getsize(output_path) == 0:
         raise IOError(f"Image file '{output_path}' is not saved or is empty.")
+    
+#ANCHOR - Remove dir beforehand if exists
+def remove_if_exists(path):
+    if os.path.exists(path):
+        shutil.rmtree(path)
+        print (f"{path} has been removed")
+    else:
+        print (f"{path} not exists")
+
+#!SECTION
 
 #SECTION API
 
@@ -285,7 +298,13 @@ class AcneDetectionView(APIView):
 
     def post(self, request, *args, **kwargs):
         
-        # img_to_detect = os.path.join(settings.MEDIA_ROOT, "img_to_detect")
+
+        #NOTE Prepare directories and download image from FB
+
+        # remove directories beforehand, just in case anything go wrong
+        remove_if_exists(os.path.join(settings.MEDIA_ROOT,"img_to_detect"))
+        remove_if_exists(os.path.join(settings.MEDIA_ROOT,"result_img"))
+        remove_if_exists("run")
 
         os.makedirs(os.path.join(settings.MEDIA_ROOT,"img_to_detect"), exist_ok=True)
         os.makedirs(os.path.join(settings.MEDIA_ROOT,"result_img"), exist_ok=True)
@@ -297,7 +316,9 @@ class AcneDetectionView(APIView):
         
         image_path = save_file_from_FB(image_url)
         
-        if os.path.isfile(image_path):
+        if image_path == "error":
+            return Response({'error': 'Failed to download the image from the provided URL. Check terminal for more information.'}, status=status.HTTP_400_BAD_REQUEST)
+        elif os.path.isfile(image_path):
             try:   
                 Image.open(image_path)
             except IOError:
@@ -305,12 +326,14 @@ class AcneDetectionView(APIView):
         else:    
             return Response({'error': 'No file found at the provided path!'}, status=status.HTTP_400_BAD_REQUEST)
             
+
+        #NOTE - CNN models
         
         yolo_model = YOLO('model/yolo_63Acc.pt')
 
-        yolo_results = yolo_model(image_path, save=True, save_conf=True, save_txt=True, save_crop=True, show_labels=False, show_conf=False, project='run/detect', name='yolo_predict', exist_ok=True)
+        yolo_model(image_path, save=True, save_conf=True, save_txt=True, save_crop=True, show_labels=False, show_conf=False, project='run/detect', name='yolo_predict', exist_ok=True)
         
-        resnet_model = models.resnet50(pretrained=True)
+        resnet_model = models.resnet50(weights=models.ResNet50_Weights.DEFAULT)
         resnet_model.fc = nn.Linear(resnet_model.fc.in_features, 5)  # Adjust to match the original model's output units
         resnet_model.load_state_dict(torch.load('model/resnet50_Acc_78.pth'))
         resnet_model.eval()    
@@ -318,7 +341,8 @@ class AcneDetectionView(APIView):
         crops_path = "run\\detect\\yolo_predict\\crops\\acne"
 
 
-        # Check if there are acnes detected
+        #NOTE Any acne found?
+
         try:
             crop_dir = os.listdir(crops_path)
         except Exception as e:
@@ -326,7 +350,6 @@ class AcneDetectionView(APIView):
             shutil.rmtree(os.path.join(settings.MEDIA_ROOT,"result_img"))
             shutil.rmtree(os.path.join(settings.MEDIA_ROOT,"img_to_detect"))
             return Response({'status' : 'status.HTTP_200_OK','data': {'message': 'No acne detected.'}}, status=status.HTTP_200_OK)
-
 
         os.makedirs(os.path.join(settings.MEDIA_ROOT,"result_img"), exist_ok=True)
 
@@ -370,19 +393,17 @@ class AcneDetectionView(APIView):
 
             print(f'Saved {crop_img} to {output_path}')
 
-        # detected_img = "run/detect/yolo_predict/" + os.path.basename(image_path)
 
-        # detection_url = upload_to_firebase(detected_img)
-        # print(detection_url)
+        #NOTE Return crop number based on classes
 
-        #SECTION - Return crops quantity based on classes
         number_of_crops = count_crops_in_acne_classes("run/classify/")
-        # print(number_of_crops)
 
-        #SECTION - Update yolo label with classes and draw bounding boxes
+
+        #NOTE Update yolo label with classes and draw bounding boxes
+
         crop_list = list_crops_with_classes("run/classify")
         sorted_crops = sorted(crop_list, key=extract_last_numeric_value_key)
-        # print(sorted_crops)
+
         crop_classes = extract_first_numeric_value(sorted_crops)
 
         base_name = os.path.basename(image_path)
@@ -401,7 +422,8 @@ class AcneDetectionView(APIView):
 
         final_url = upload_to_firebase(final_path)
 
-        # remove data from local
+
+        #NOTE Remove data from local
 
         try:
             shutil.rmtree('run')
@@ -409,22 +431,9 @@ class AcneDetectionView(APIView):
             shutil.rmtree(os.path.join(settings.MEDIA_ROOT,"result_img"))
         except Exception as e:
             print(f"Error occurred while removing file '{final_path}': {e}")
-        try:
-            os.remove(image_path)
-        except Exception as e:
-            print(f"Error occurred while removing file '{image_path}': {e}")
 
-        # for filename in os.listdir(img_to_detect):
-        #     file_path = os.path.join(img_to_detect, filename)
-        #     try:
-        #         # If it's a directory, delete it and its contents
-        #         if os.path.isdir(file_path):
-        #             shutil.rmtree(file_path)
-        #         # If it's a file, delete it
-        #         else:
-        #             os.remove(file_path)
-        #     except Exception as e:
-        #         print(f'Failed to delete {file_path}. Reason: {e}')
 
+        #NOTE - Final results
 
         return Response({"status" : "status.HTTP_200_OK", "data" : {"detected_image_url": final_url, "number_of_acnes": number_of_crops}},status=status.HTTP_200_OK)
+#!SECTION
