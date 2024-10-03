@@ -263,15 +263,25 @@ def draw_bounding_boxes(image_path, label_path, output_path):
         x2 = int((x_center + bbox_width / 2) * w)
         y2 = int((y_center + bbox_height / 2) * h)
 
+        # Get color based on class
+
+        color_map = {
+            0: (255,0,0),
+            1: (0,255,0),
+            2: (0,0,255),
+            3: (255,255,0),
+            4: (0,255,255),
+        }
+        color = color_map.get(int(class_id), (255,255,255))
         # Draw rectangle
-        cv2.rectangle(image, (x1, y1), (x2, y2), (0, 255, 0), 2)
+        cv2.rectangle(image, (x1, y1), (x2, y2), color, 2)
         
         # Draw class ID text
-        class_id_text = f'{int(class_id)}'
-        text_size = cv2.getTextSize(class_id_text, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 1)[0]
-        text_x = x1
-        text_y = y1 - 5 if y1 - 5 > 5 else y1 + 5
-        cv2.putText(image, class_id_text, (text_x, text_y), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 1, cv2.LINE_AA)
+        # class_id_text = f'{int(class_id)}'
+        # text_size = cv2.getTextSize(class_id_text, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 1)[0]
+        # text_x = x1
+        # text_y = y1 - 5 if y1 - 5 > 5 else y1 + 5
+        # cv2.putText(image, class_id_text, (text_x, text_y), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 1, cv2.LINE_AA)
 
     # Save or display the result
     success = cv2.imwrite(output_path, image)
